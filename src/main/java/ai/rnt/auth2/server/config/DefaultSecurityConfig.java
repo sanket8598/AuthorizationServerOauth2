@@ -26,10 +26,12 @@ public class DefaultSecurityConfig {
     public JdbcTemplate jdbcTemplate(DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }
+    
     @Bean
     SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
         http.authorizeRequests(authorizeRequests ->
-                        authorizeRequests.anyRequest().authenticated()
+                 authorizeRequests.antMatchers("/api/**").permitAll()
+                 .anyRequest().authenticated()
                 )
                 .formLogin(Customizer.withDefaults());
         return http.build();

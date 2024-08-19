@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
@@ -34,76 +35,76 @@ import java.util.UUID;
 @Configuration(proxyBeanMethods = false)
 public class AuthorizationServerConfig {
 
+	@Autowired
+	private PasswordEncoder passwordEncoder;
+	@Autowired
+	JdbcTemplate jdbcTemplate;
 
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-    @Autowired
-    JdbcTemplate jdbcTemplate;
+	@Bean
+	@Order(Ordered.HIGHEST_PRECEDENCE)
+	public SecurityFilterChain authServerSecurityFilterChain(HttpSecurity http) throws Exception {
+		OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
 
-    @Bean
-    @Order(Ordered.HIGHEST_PRECEDENCE)
-    public SecurityFilterChain authServerSecurityFilterChain(HttpSecurity http) throws Exception {
-        OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
+		return http.formLogin(Customizer.withDefaults()).build();
+	}
 
-        return http.formLogin(Customizer.withDefaults()).build();
-    }
+	@Bean
+	@Qualifier("jdbcRegisteredClientRepository")
+	public JdbcRegisteredClientRepository jdbcRegisteredClientRepository() {
+		return new JdbcRegisteredClientRepository(jdbcTemplate);
+	}
 
-    @Bean
-    public RegisteredClientRepository registeredClientRepository() {
-        RegisteredClient registeredClient = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId("rnt-crm")
-                .clientSecret(passwordEncoder.encode("new-secret"))
-                .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-                .authorizationGrantType(AuthorizationGrantType.PASSWORD)
-                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri("http://127.0.0.1:9191/login/oauth2/code/rnt-crm")
-                .redirectUri("http://127.0.0.1:9191/authorized")
-                .scope(OidcScopes.OPENID)
-                .scope("api.read")
-                .clientSettings(ClientSettings.builder().requireAuthorizationConsent(true).build())
-                .build();
+	/*
+	 * @Bean
+	 * 
+	 * @Qualifier("registeredClientRepository") public RegisteredClientRepository
+	 * registeredClientRepository() { RegisteredClient registeredClient =
+	 * RegisteredClient.withId(UUID.randomUUID().toString()).clientId("rnt-crm")
+	 * .clientSecret(passwordEncoder.encode("new-secret"))
+	 * .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+	 * .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+	 * .authorizationGrantType(AuthorizationGrantType.PASSWORD)
+	 * .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+	 * .redirectUri("http://127.0.0.1:9191/login/oauth2/code/rnt-crm")
+	 * .redirectUri("http://127.0.0.1:9191/authorized").scope(OidcScopes.OPENID).
+	 * scope("api.read")
+	 * .clientSettings(ClientSettings.builder().requireAuthorizationConsent(true).
+	 * build()).build();
+	 * 
+	 * // registeredClientRepository.save(registeredClient);
+	 * 
+	 * return jdbcRegisteredClientRepository(); // return new
+	 * InMemoryRegisteredClientRepository(registeredClient); }
+	 */
 
-        JdbcRegisteredClientRepository registeredClientRepository = new JdbcRegisteredClientRepository(jdbcTemplate);
-       // registeredClientRepository.save(registeredClient);
+	@Bean
+	public JWKSource<SecurityContext> jwkSource() {
+		RSAKey rsaKey = generateRsa();
+		JWKSet jwkSet = new JWKSet(rsaKey);
+		return (jwkSelector, securityContext) -> jwkSelector.select(jwkSet);
+	}
 
-    return registeredClientRepository;
-      //  return new InMemoryRegisteredClientRepository(registeredClient);
-    }
+	private static RSAKey generateRsa() {
+		KeyPair keyPair = generateRsaKey();
+		RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
+		RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
+		return new RSAKey.Builder(publicKey).privateKey(privateKey).keyID(UUID.randomUUID().toString()).build();
+	}
 
-    @Bean
-    public JWKSource<SecurityContext> jwkSource() {
-        RSAKey rsaKey = generateRsa();
-        JWKSet jwkSet = new JWKSet(rsaKey);
-        return (jwkSelector, securityContext) -> jwkSelector.select(jwkSet);
-    }
+	private static KeyPair generateRsaKey() {
+		KeyPair keyPair;
+		try {
+			KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
+			keyPairGenerator.initialize(2048);
+			keyPair = keyPairGenerator.generateKeyPair();
+		} catch (Exception ex) {
+			throw new IllegalStateException(ex);
+		}
+		return keyPair;
+	}
 
-    private static RSAKey generateRsa() {
-        KeyPair keyPair = generateRsaKey();
-        RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-        RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
-        return new RSAKey.Builder(publicKey)
-                .privateKey(privateKey)
-                .keyID(UUID.randomUUID().toString())
-                .build();
-    }
-
-    private static KeyPair generateRsaKey() {
-        KeyPair keyPair;
-        try {
-            KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-            keyPairGenerator.initialize(2048);
-            keyPair = keyPairGenerator.generateKeyPair();
-        } catch (Exception ex) {
-            throw new IllegalStateException(ex);
-        }
-        return keyPair;
-    }
-
-    @Bean
-    public ProviderSettings providerSettings() {
-        return ProviderSettings.builder()
-                .issuer("http://localhost:9090")
-                .build();
-    }
+	@Bean
+	public ProviderSettings providerSettings() {
+		return ProviderSettings.builder().issuer("http://localhost:9090").build();
+	}
 }
